@@ -1,0 +1,21 @@
+services:
+  app:
+    build:
+      context: ./../..
+      dockerfile: ./internal/example/Dockerfile
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGDATABASE: postgres
+      PGPASSWORD: postgres
+    depends_on:
+      - db
+    deploy:
+      mode: replicated
+      replicas: 2
+  db:
+    image: postgres:latest
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: postgres
