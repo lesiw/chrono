@@ -31,12 +31,13 @@ type Memory struct {
 }
 
 func New() Scheduler {
-	m := &Memory{routines: make(chan routine)}
+	m := new(Memory)
 	m.Init()
 	return m
 }
 
 func (m *Memory) Init() {
+	m.routines = make(chan routine)
 	go func() {
 		var routines []routine
 		ticker := time.NewTicker(time.Minute)

@@ -38,16 +38,15 @@ type Pgx struct {
 
 // NewPgx instantiates a new Pgx scheduler.
 func NewPgx(conn PgxConn) (Scheduler, error) {
-	p := &Pgx{
-		ctx:      context.Background(),
-		conn:     conn,
-		routinec: make(chan routine),
-		routines: make(map[string]routine),
-	}
+	p := new(Pgx)
 	return p, p.Init(conn)
 }
 
 func (p *Pgx) Init(conn PgxConn) (err error) {
+	p.ctx = context.Background()
+	p.conn = conn
+	p.routinec = make(chan routine)
+	p.routines = make(map[string]routine)
 	for n := range 3 {
 		_, err = conn.Exec(p.ctx, stmt.CreateChronoTable)
 		if err != nil {
