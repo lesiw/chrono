@@ -50,5 +50,5 @@ func main() {
 }
 ```
 
-A more full-featured example is available under `internal/example`. Run
-`docker compose up` to build it.
+A `docker compose` example is available under
+[internal/example](internal/example). Run `docker compose up` to build it.
