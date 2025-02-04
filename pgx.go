@@ -16,6 +16,7 @@ import (
 )
 
 var sleep = time.Sleep
+var timeNow = time.Now
 var prevTick = gronx.PrevTick
 var prevTickBefore = gronx.PrevTickBefore
 var errBadCron = fmt.Errorf("bad cron expression")
@@ -34,6 +35,7 @@ type Pgx struct {
 	conn     PgxConn
 	routinec chan routine
 	routines map[string]routine
+	notify   chan struct{}
 }
 
 // NewPgx instantiates a new Pgx scheduler.
@@ -147,7 +149,7 @@ func (p *Pgx) tick(now time.Time, r routine) error {
 				goto done
 			case <-ticker.C:
 				_, err = p.conn.Exec(
-					p.ctx, stmt.HeartbeatJob, r.Name, time.Now(),
+					p.ctx, stmt.HeartbeatJob, r.Name, timeNow(),
 				)
 				if err != nil {
 					p.log(err)
@@ -156,10 +158,14 @@ func (p *Pgx) tick(now time.Time, r routine) error {
 		}
 	done:
 		_, err = p.conn.Exec(
-			p.ctx, stmt.UpdateJob, r.Name, false, now, time.Now(),
+			p.ctx, stmt.UpdateJob, r.Name, false, now, timeNow(),
 		)
 		if err != nil {
 			p.log(err)
+		}
+		select {
+		case p.notify <- struct{}{}:
+		default:
 		}
 	}()
 	go func() { r.Do(); done <- struct{}{} }()

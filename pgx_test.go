@@ -235,6 +235,7 @@ func TestInactiveJobDue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPgx(conn) = _, %q, want <nil>", err)
 	}
+	cron.(*Pgx).notify = make(chan struct{})
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
 		return now.Add(time.Minute), nil
@@ -242,12 +243,9 @@ func TestInactiveJobDue(t *testing.T) {
 	swap(t, &prevTickBefore, func(string, time.Time, bool) (time.Time, error) {
 		return now, nil
 	})
+	swap(t, &timeNow, func() time.Time { return now })
 	var execs int
-	done := make(chan struct{})
-	err = cron.Go("example", "* * * * *", func() {
-		execs++
-		close(done)
-	})
+	err = cron.Go("example", "* * * * *", func() { execs++ })
 	if err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
 			"example", "* * * * *", err)
@@ -265,7 +263,7 @@ func TestInactiveJobDue(t *testing.T) {
 	now = now.Add(time.Minute)
 
 	err = cron.(*Pgx).tick(now, cr)
-	<-done
+	<-cron.(*Pgx).notify
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -288,6 +286,10 @@ func TestInactiveJobDue(t *testing.T) {
 		context.Background(),
 		stmt.ActivateJob,
 		[]any{"example", now},
+	}, {
+		context.Background(),
+		stmt.UpdateJob,
+		[]any{"example", false, now, now},
 	}}
 	if got, want := conn.queries, wantQueries; !cmp.Equal(got, want, opts...) {
 		t.Errorf("queries -want +got\n%s", cmp.Diff(want, got, opts...))
@@ -332,8 +334,6 @@ func TestInactiveJobNotDue(t *testing.T) {
 
 	err = cron.(*Pgx).tick(now, cr)
 
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
 	if err != nil {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
 	}
@@ -393,8 +393,6 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 
 	err = cron.(*Pgx).tick(now, cr)
 
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
 	if err != nil {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
 	}
@@ -428,6 +426,7 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPgx(conn) = _, %q, want <nil>", err)
 	}
+	cron.(*Pgx).notify = make(chan struct{})
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
 		return now, nil
@@ -435,12 +434,9 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 	swap(t, &prevTickBefore, func(string, time.Time, bool) (time.Time, error) {
 		return now.Add(time.Minute), nil
 	})
+	swap(t, &timeNow, func() time.Time { return now })
 	var execs int
-	done := make(chan struct{})
-	err = cron.Go("example", "* * * * *", func() {
-		execs++
-		close(done)
-	})
+	err = cron.Go("example", "* * * * *", func() { execs++ })
 	if err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
 			"example", "* * * * *", err)
@@ -457,7 +453,7 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 	}
 
 	err = cron.(*Pgx).tick(now, cr)
-	<-done
+	<-cron.(*Pgx).notify
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -480,6 +476,10 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 		context.Background(),
 		stmt.ActivateJob,
 		[]any{"example", now},
+	}, {
+		context.Background(),
+		stmt.UpdateJob,
+		[]any{"example", false, now, now},
 	}}
 	if got, want := conn.queries, wantQueries; !cmp.Equal(got, want, opts...) {
 		t.Errorf("queries -want +got\n%s", cmp.Diff(want, got, opts...))
