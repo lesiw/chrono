@@ -38,8 +38,8 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    cron, err := chrono.NewPgx(conn)
-    if err != nil {
+    cron := chrono.Pgx{Conn: conn}
+    if err := cron.Start(); err != nil {
         log.Fatal(err)
     }
     err = cron.Go("example", "* * * * *", func() { println("hello world!") })

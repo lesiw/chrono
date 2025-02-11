@@ -31,8 +31,8 @@ func run() (err error) {
 	if err != nil {
 		return fmt.Errorf("could not connect to database: %w", err)
 	}
-	cron, err := chrono.NewPgx(pool)
-	if err != nil {
+	cron := chrono.Pgx{Conn: pool}
+	if err := cron.Start(); err != nil {
 		return err
 	}
 	err = cron.Go("example", "* * * * *", func() {

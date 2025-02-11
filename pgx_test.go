@@ -21,7 +21,7 @@ type unary struct {
 
 type query struct {
 	Ctx context.Context
-	Sql string
+	Sql string //revive:disable-line:var-naming
 	Arg []any
 }
 
@@ -93,13 +93,14 @@ var opts = []cmp.Option{
 	cmpopts.IgnoreTypes(make(chan error)),
 }
 
-func TestNewPgx(t *testing.T) {
+func TestPgxStart(t *testing.T) {
 	conn := new(fakeConn)
 
-	_, err := NewPgx(conn)
+	cron := Pgx{Conn: conn}
+	err := cron.Start()
 
 	if err != nil {
-		t.Errorf("NewPgx(conn) = _, %q, want <nil>", err)
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
 	wantExecs := []query{{context.Background(), stmt.CreateChronoTable, nil}}
 	if got, want := conn.queries, wantExecs; !cmp.Equal(got, want, opts...) {
@@ -107,17 +108,18 @@ func TestNewPgx(t *testing.T) {
 	}
 }
 
-func TestNewPgxConnectionSlow(t *testing.T) {
+func TestPgxStartConnectionSlow(t *testing.T) {
 	conn := new(fakeConn)
 	pgxErr := errors.New("pgx error")
 	conn.queryErrs = []error{pgxErr, pgxErr, nil}
 	sleeps := []time.Duration{}
 	swap(t, &sleep, func(d time.Duration) { sleeps = append(sleeps, d) })
 
-	_, err := NewPgx(conn)
+	cron := Pgx{Conn: conn}
+	err := cron.Start()
 
 	if err != nil {
-		t.Errorf("NewPgx(conn) = _, %q, want <nil>", err)
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
 	var wantExecs []query
 	for range 3 {
@@ -141,10 +143,11 @@ func TestNewPgxConnectionFail(t *testing.T) {
 	sleeps := []time.Duration{}
 	swap(t, &sleep, func(d time.Duration) { sleeps = append(sleeps, d) })
 
-	_, err := NewPgx(conn)
+	cron := Pgx{Conn: conn}
+	err := cron.Start()
 
 	if !errors.Is(err, pgxErr) {
-		t.Errorf("NewPgx(conn) = _, %q, want %q", err, pgxErr)
+		t.Errorf("cron.Start() = %q, want %q", err, pgxErr)
 	}
 	var wantExecs []query
 	for range 3 {
@@ -167,16 +170,16 @@ func TestNewPgxConnectionFail(t *testing.T) {
 
 func TestAddRoutine(t *testing.T) {
 	conn := new(fakeConn)
-	cron, err := NewPgx(conn)
-	if err != nil {
-		t.Errorf("NewPgx(conn) = _, %q, want <nil>", err)
+	cron := Pgx{Conn: conn}
+	if err := cron.Start(); err != nil {
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
 		return now, nil
 	})
 
-	err = cron.Go("example", "* * * * *", nil)
+	err := cron.Go("example", "* * * * *", nil)
 
 	if err != nil {
 		t.Errorf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
@@ -197,7 +200,7 @@ func TestAddRoutine(t *testing.T) {
 	wantRoutines := map[string]routine{
 		"example": {"example", "* * * * *", nil, make(chan error)},
 	}
-	gotRoutines := cron.(*Pgx).routines
+	gotRoutines := cron.routines
 	if got, want := gotRoutines, wantRoutines; !cmp.Equal(got, want, opts...) {
 		t.Errorf("routines -want +got\n%s", cmp.Diff(want, got, opts...))
 	}
@@ -205,12 +208,12 @@ func TestAddRoutine(t *testing.T) {
 
 func TestAddRoutineInvalidCron(t *testing.T) {
 	conn := new(fakeConn)
-	cron, err := NewPgx(conn)
-	if err != nil {
-		t.Errorf("NewPgx(conn) = _, %q, want <nil>", err)
+	cron := Pgx{Conn: conn}
+	if err := cron.Start(); err != nil {
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
 
-	err = cron.Go("example", "bad cron", nil)
+	err := cron.Go("example", "bad cron", nil)
 
 	if !errors.Is(err, errBadCron) {
 		t.Errorf("cron.Go(%q, %q, func() {}) = %q, want %q",
@@ -224,18 +227,18 @@ func TestAddRoutineInvalidCron(t *testing.T) {
 	if got, want := conn.queries, wantQueries; !cmp.Equal(got, want, opts...) {
 		t.Errorf("queries -want +got\n%s", cmp.Diff(want, got, opts...))
 	}
-	if routines := cron.(*Pgx).routines; len(routines) > 0 {
+	if routines := cron.routines; len(routines) > 0 {
 		t.Errorf("len(routines) = %d, want 0", len(routines))
 	}
 }
 
 func TestInactiveJobDue(t *testing.T) {
 	conn := new(fakeConn)
-	cron, err := NewPgx(conn)
-	if err != nil {
-		t.Fatalf("NewPgx(conn) = _, %q, want <nil>", err)
+	cron := Pgx{Conn: conn}
+	if err := cron.Start(); err != nil {
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
-	cron.(*Pgx).notify = make(chan struct{})
+	cron.notify = make(chan struct{})
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
 		return now.Add(time.Minute), nil
@@ -245,12 +248,11 @@ func TestInactiveJobDue(t *testing.T) {
 	})
 	swap(t, &timeNow, func() time.Time { return now })
 	var execs int
-	err = cron.Go("example", "* * * * *", func() { execs++ })
-	if err != nil {
+	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
 			"example", "* * * * *", err)
 	}
-	cr := cron.(*Pgx).routines["example"]
+	cr := cron.routines["example"]
 	conn.scans = [][]any{
 		{},
 		{},
@@ -262,8 +264,8 @@ func TestInactiveJobDue(t *testing.T) {
 	}
 	now = now.Add(time.Minute)
 
-	err = cron.(*Pgx).tick(now, cr)
-	<-cron.(*Pgx).notify
+	err := cron.tick(now, cr)
+	<-cron.notify
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -304,9 +306,9 @@ func TestInactiveJobDue(t *testing.T) {
 
 func TestInactiveJobNotDue(t *testing.T) {
 	conn := new(fakeConn)
-	cron, err := NewPgx(conn)
-	if err != nil {
-		t.Fatalf("NewPgx(conn) = _, %q, want <nil>", err)
+	cron := Pgx{Conn: conn}
+	if err := cron.Start(); err != nil {
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
@@ -316,12 +318,11 @@ func TestInactiveJobNotDue(t *testing.T) {
 		return now, nil
 	})
 	var execs int
-	err = cron.Go("example", "* * * * *", func() { execs++ })
-	if err != nil {
+	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
 			"example", "* * * * *", err)
 	}
-	cr := cron.(*Pgx).routines["example"]
+	cr := cron.routines["example"]
 	conn.scans = [][]any{
 		{},
 		{},
@@ -332,7 +333,7 @@ func TestInactiveJobNotDue(t *testing.T) {
 		},
 	}
 
-	err = cron.(*Pgx).tick(now, cr)
+	err := cron.tick(now, cr)
 
 	if err != nil {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
@@ -363,9 +364,9 @@ func TestInactiveJobNotDue(t *testing.T) {
 
 func TestActiveJobValidHeartbeat(t *testing.T) {
 	conn := new(fakeConn)
-	cron, err := NewPgx(conn)
-	if err != nil {
-		t.Fatalf("NewPgx(conn) = _, %q, want <nil>", err)
+	cron := Pgx{Conn: conn}
+	if err := cron.Start(); err != nil {
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
@@ -375,12 +376,11 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 		return now, nil
 	})
 	var execs int
-	err = cron.Go("example", "* * * * *", func() { execs++ })
-	if err != nil {
+	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
 			"example", "* * * * *", err)
 	}
-	cr := cron.(*Pgx).routines["example"]
+	cr := cron.routines["example"]
 	conn.scans = [][]any{
 		{},
 		{},
@@ -391,7 +391,7 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 		},
 	}
 
-	err = cron.(*Pgx).tick(now, cr)
+	err := cron.tick(now, cr)
 
 	if err != nil {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
@@ -422,11 +422,11 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 
 func TestActiveJobInvalidHeartbeat(t *testing.T) {
 	conn := new(fakeConn)
-	cron, err := NewPgx(conn)
-	if err != nil {
-		t.Fatalf("NewPgx(conn) = _, %q, want <nil>", err)
+	cron := Pgx{Conn: conn}
+	if err := cron.Start(); err != nil {
+		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
-	cron.(*Pgx).notify = make(chan struct{})
+	cron.notify = make(chan struct{})
 	now := time.Now()
 	swap(t, &prevTick, func(string, bool) (time.Time, error) {
 		return now, nil
@@ -436,12 +436,11 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 	})
 	swap(t, &timeNow, func() time.Time { return now })
 	var execs int
-	err = cron.Go("example", "* * * * *", func() { execs++ })
-	if err != nil {
+	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
 			"example", "* * * * *", err)
 	}
-	cr := cron.(*Pgx).routines["example"]
+	cr := cron.routines["example"]
 	conn.scans = [][]any{
 		{},
 		{},
@@ -452,8 +451,8 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 		},
 	}
 
-	err = cron.(*Pgx).tick(now, cr)
-	<-cron.(*Pgx).notify
+	err := cron.tick(now, cr)
+	<-cron.notify
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()

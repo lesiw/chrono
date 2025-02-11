@@ -1,12 +1,10 @@
 package chrono
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"time"
 
 	"github.com/adhocore/gronx"
@@ -15,42 +13,54 @@ import (
 	"lesiw.io/chrono/internal/stmt"
 )
 
-var sleep = time.Sleep
-var timeNow = time.Now
-var prevTick = gronx.PrevTick
-var prevTickBefore = gronx.PrevTickBefore
-var errBadCron = fmt.Errorf("bad cron expression")
-
-// A PgxConn is a pgx.Conn or pgxpool.Pool.
+// A PgxConn is a [pgx.Conn] or [pgxpool.Pool].
+//
+// [pgx.Conn]: https://pkg.go.dev/github.com/jackc/pgx/v5#Conn
+// [pgxpool.Pool]: https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool#Pool
 type PgxConn interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 	Exec(ctx context.Context, sql string, arguments ...any) (
 		pgconn.CommandTag, error)
-	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-// Pgx is a postgres-backed scheduler.
+// Pgx is a PostgreSQL-backed scheduler.
+//
+// The Conn field is required and should be a [pgx.Conn] or [pgxpool.Pool].
+//
+//	cron := chrono.Pgx{Conn: conn}
+//	if err := cron.Start(); err != nil {
+//		log.Fatal(err)
+//	}
+//
+// [pgx.Conn]: https://pkg.go.dev/github.com/jackc/pgx/v5#Conn
+// [pgxpool.Pool]: https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool#Pool
 type Pgx struct {
-	Log      io.Writer
+	Conn PgxConn
+	Log  io.Writer
+
+	started  bool
 	ctx      context.Context
-	conn     PgxConn
 	routinec chan routine
 	routines map[string]routine
 	notify   chan struct{}
 }
 
-// NewPgx instantiates a new Pgx scheduler.
-func NewPgx(conn PgxConn) (Scheduler, error) {
-	p := new(Pgx)
-	return p, p.Init(conn)
-}
-
-func (p *Pgx) Init(conn PgxConn) (err error) {
+// Start initializes a [Pgx] scheduler.
+func (p *Pgx) Start() (err error) {
+	if p.started {
+		return fmt.Errorf("already started")
+	}
+	if p.Conn == nil {
+		return fmt.Errorf("bad Conn")
+	}
+	if p.Log == nil {
+		p.Log = io.Discard
+	}
 	p.ctx = context.Background()
-	p.conn = conn
 	p.routinec = make(chan routine)
 	p.routines = make(map[string]routine)
 	for n := range 3 {
-		_, err = conn.Exec(p.ctx, stmt.CreateChronoTable)
+		_, err = p.Conn.Exec(p.ctx, stmt.CreateChronoTable)
 		if err != nil {
 			sleep(time.Duration(math.Pow(2, float64(n))) * time.Second)
 			continue
@@ -77,10 +87,20 @@ func (p *Pgx) Init(conn PgxConn) (err error) {
 			}
 		}
 	}()
+	p.started = true
 	return nil
 }
 
+// Go schedules a task.
+//
+// name is the unique identifier for this task.
+//
+// The task will run on the next tick of the cron expression.
+// If [Pgx] detects a missed cron tick, it runs the task immediately.
 func (p *Pgx) Go(name, cron string, f func()) error {
+	if !p.started {
+		return fmt.Errorf("not started")
+	}
 	if !gronx.IsValid(cron) {
 		return errBadCron
 	}
@@ -95,8 +115,7 @@ func (p *Pgx) Go(name, cron string, f func()) error {
 }
 
 func (p *Pgx) log(a any) {
-	w := cmp.Or[io.Writer](p.Log, os.Stderr)
-	_, _ = w.Write([]byte(fmt.Sprintf("lesiw.io/chrono: %s\n", a)))
+	_, _ = p.Log.Write([]byte(fmt.Sprintf("lesiw.io/chrono: %s\n", a)))
 }
 
 func (p *Pgx) insert(r routine) error {
@@ -104,7 +123,7 @@ func (p *Pgx) insert(r routine) error {
 	if err != nil {
 		return fmt.Errorf("could not determine previous tick: %w", err)
 	}
-	_, err = p.conn.Exec(p.ctx, stmt.InsertJob, r.Name, lastrun)
+	_, err = p.Conn.Exec(p.ctx, stmt.InsertJob, r.Name, lastrun)
 	if err != nil {
 		return fmt.Errorf("InsertJob: %w", err)
 	}
@@ -118,7 +137,7 @@ func (p *Pgx) tick(now time.Time, r routine) error {
 	}
 	var active bool
 	var lastRun, lastBeat time.Time
-	tx, err := p.conn.Begin(p.ctx)
+	tx, err := p.Conn.Begin(p.ctx)
 	if err != nil {
 		return err
 	}
@@ -148,7 +167,7 @@ func (p *Pgx) tick(now time.Time, r routine) error {
 			case <-done:
 				goto done
 			case <-ticker.C:
-				_, err = p.conn.Exec(
+				_, err = p.Conn.Exec(
 					p.ctx, stmt.HeartbeatJob, r.Name, timeNow(),
 				)
 				if err != nil {
@@ -157,7 +176,7 @@ func (p *Pgx) tick(now time.Time, r routine) error {
 			}
 		}
 	done:
-		_, err = p.conn.Exec(
+		_, err = p.Conn.Exec(
 			p.ctx, stmt.UpdateJob, r.Name, false, now, timeNow(),
 		)
 		if err != nil {
