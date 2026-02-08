@@ -10,6 +10,7 @@ import (
 	"github.com/adhocore/gronx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"lesiw.io/chrono/internal/stmt"
 )
 
@@ -115,7 +116,7 @@ func (p *Pgx) Go(name, cron string, f func()) error {
 }
 
 func (p *Pgx) log(a any) {
-	_, _ = p.Log.Write([]byte(fmt.Sprintf("lesiw.io/chrono: %s\n", a)))
+	_, _ = p.Log.Write(fmt.Appendf(nil, "lesiw.io/chrono: %s\n", a))
 }
 
 func (p *Pgx) insert(r routine) error {
