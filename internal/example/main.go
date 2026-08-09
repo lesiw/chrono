@@ -36,9 +36,7 @@ func run() (err error) {
 	if err := cron.Start(); err != nil {
 		return err
 	}
-	err = cron.Go("example", "* * * * *", func() {
-		slog.Info("hello world!")
-	})
+	err = cron.Go("example", "* * * * *", func() { slog.Info("hello world!") })
 	if err != nil {
 		return err
 	}

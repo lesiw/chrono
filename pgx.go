@@ -20,8 +20,7 @@ import (
 // [pgxpool.Pool]: https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool#Pool
 type PgxConn interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
-	Exec(ctx context.Context, sql string, arguments ...any) (
-		pgconn.CommandTag, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 }
 
 // Pgx is a PostgreSQL-backed scheduler.

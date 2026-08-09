@@ -54,9 +54,7 @@ func (c *fakeConn) Commit(ctx context.Context) error {
 	return nil
 }
 
-func (c *fakeConn) Exec(
-	ctx context.Context, sql string, a ...any,
-) (tag pgconn.CommandTag, err error) {
+func (c *fakeConn) Exec(ctx context.Context, sql string, a ...any) (tag pgconn.CommandTag, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.queryErrs) > len(c.queries) {
@@ -66,9 +64,7 @@ func (c *fakeConn) Exec(
 	return
 }
 
-func (c *fakeConn) QueryRow(
-	ctx context.Context, sql string, a ...any,
-) (row pgx.Row) {
+func (c *fakeConn) QueryRow(ctx context.Context, sql string, a ...any) (row pgx.Row) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.scans) > len(c.queries) {
@@ -184,7 +180,8 @@ func TestAddRoutine(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
-			"example", "* * * * *", err)
+			"example", "* * * * *", err,
+		)
 	}
 	wantQueries := []query{{
 		context.Background(),
@@ -218,7 +215,8 @@ func TestAddRoutineInvalidCron(t *testing.T) {
 
 	if !errors.Is(err, errBadCron) {
 		t.Errorf("cron.Go(%q, %q, func() {}) = %q, want %q",
-			"example", "invalid", err, errBadCron)
+			"example", "invalid", err, errBadCron,
+		)
 	}
 	wantQueries := []query{{
 		context.Background(),
@@ -251,18 +249,15 @@ func TestInactiveJobDue(t *testing.T) {
 	var execs int
 	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
-			"example", "* * * * *", err)
+			"example", "* * * * *", err,
+		)
 	}
 	cr := cron.routines["example"]
-	conn.scans = [][]any{
-		{},
-		{},
-		{
-			false, // active
-			now,   // lastRun
-			now,   // lastBeat
-		},
-	}
+	conn.scans = [][]any{{}, {}, {
+		false, // active
+		now,   // lastRun
+		now,   // lastBeat
+	}}
 	now = now.Add(time.Minute)
 
 	err := cron.tick(now, cr)
@@ -321,18 +316,15 @@ func TestInactiveJobNotDue(t *testing.T) {
 	var execs int
 	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
-			"example", "* * * * *", err)
+			"example", "* * * * *", err,
+		)
 	}
 	cr := cron.routines["example"]
-	conn.scans = [][]any{
-		{},
-		{},
-		{
-			false, // active
-			now,   // lastRun
-			now,   // lastBeat
-		},
-	}
+	conn.scans = [][]any{{}, {}, {
+		false, // active
+		now,   // lastRun
+		now,   // lastBeat
+	}}
 
 	err := cron.tick(now, cr)
 
@@ -379,18 +371,15 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 	var execs int
 	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
-			"example", "* * * * *", err)
+			"example", "* * * * *", err,
+		)
 	}
 	cr := cron.routines["example"]
-	conn.scans = [][]any{
-		{},
-		{},
-		{
-			true,                      // active
-			now.Add(-5 * time.Minute), // lastRun
-			now.Add(-2 * time.Second), // lastBeat
-		},
-	}
+	conn.scans = [][]any{{}, {}, {
+		true,                      // active
+		now.Add(-5 * time.Minute), // lastRun
+		now.Add(-2 * time.Second), // lastBeat
+	}}
 
 	err := cron.tick(now, cr)
 
@@ -439,18 +428,15 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 	var execs int
 	if err := cron.Go("example", "* * * * *", func() { execs++ }); err != nil {
 		t.Fatalf("cron.Go(%q, %q, func() {}) = %q, want <nil>",
-			"example", "* * * * *", err)
+			"example", "* * * * *", err,
+		)
 	}
 	cr := cron.routines["example"]
-	conn.scans = [][]any{
-		{},
-		{},
-		{
-			true,                      // active
-			now.Add(-5 * time.Minute), // lastRun
-			now.Add(-2 * time.Minute), // lastBeat
-		},
-	}
+	conn.scans = [][]any{{}, {}, {
+		true,                      // active
+		now.Add(-5 * time.Minute), // lastRun
+		now.Add(-2 * time.Minute), // lastBeat
+	}}
 
 	err := cron.tick(now, cr)
 	<-cron.notify
