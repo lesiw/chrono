@@ -91,15 +91,16 @@ var opts = []cmp.Option{
 }
 
 func TestPgxStart(t *testing.T) {
-	conn := new(fakeConn)
-
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	err := cron.Start()
 
 	if err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
-	wantExecs := []query{{context.Background(), stmt.CreateChronoTable, nil}}
+	wantExecs := []query{{t.Context(), stmt.CreateChronoTable, nil}}
 	if got, want := conn.queries, wantExecs; !cmp.Equal(got, want, opts...) {
 		t.Errorf("queries -want +got\n%s", cmp.Diff(want, got, opts...))
 	}
@@ -121,7 +122,7 @@ func TestPgxStartConnectionSlow(t *testing.T) {
 	var wantExecs []query
 	for range 3 {
 		wantExecs = append(wantExecs, query{
-			context.Background(), stmt.CreateChronoTable, nil,
+			t.Context(), stmt.CreateChronoTable, nil,
 		})
 	}
 	if got, want := conn.queries, wantExecs; !cmp.Equal(got, want, opts...) {
@@ -149,7 +150,7 @@ func TestNewPgxConnectionFail(t *testing.T) {
 	var wantExecs []query
 	for range 3 {
 		wantExecs = append(wantExecs, query{
-			context.Background(), stmt.CreateChronoTable, nil,
+			t.Context(), stmt.CreateChronoTable, nil,
 		})
 	}
 	if got, want := conn.queries, wantExecs; !cmp.Equal(got, want, opts...) {
@@ -166,8 +167,10 @@ func TestNewPgxConnectionFail(t *testing.T) {
 }
 
 func TestAddRoutine(t *testing.T) {
-	conn := new(fakeConn)
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	if err := cron.Start(); err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
@@ -184,11 +187,11 @@ func TestAddRoutine(t *testing.T) {
 		)
 	}
 	wantQueries := []query{{
-		context.Background(),
+		t.Context(),
 		stmt.CreateChronoTable,
 		nil,
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.InsertJob,
 		[]any{"example", now},
 	}}
@@ -205,8 +208,10 @@ func TestAddRoutine(t *testing.T) {
 }
 
 func TestAddRoutineInvalidCron(t *testing.T) {
-	conn := new(fakeConn)
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	if err := cron.Start(); err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
@@ -219,7 +224,7 @@ func TestAddRoutineInvalidCron(t *testing.T) {
 		)
 	}
 	wantQueries := []query{{
-		context.Background(),
+		t.Context(),
 		stmt.CreateChronoTable,
 		nil,
 	}}
@@ -232,8 +237,10 @@ func TestAddRoutineInvalidCron(t *testing.T) {
 }
 
 func TestInactiveJobDue(t *testing.T) {
-	conn := new(fakeConn)
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	if err := cron.Start(); err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
@@ -269,23 +276,23 @@ func TestInactiveJobDue(t *testing.T) {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
 	}
 	wantQueries := []query{{
-		context.Background(),
+		t.Context(),
 		stmt.CreateChronoTable,
 		nil,
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.InsertJob,
 		[]any{"example", now},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.SelectJob,
 		[]any{"example"},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.ActivateJob,
 		[]any{"example", now},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.UpdateJob,
 		[]any{"example", false, now, now},
 	}}
@@ -301,8 +308,10 @@ func TestInactiveJobDue(t *testing.T) {
 }
 
 func TestInactiveJobNotDue(t *testing.T) {
-	conn := new(fakeConn)
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	if err := cron.Start(); err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
@@ -332,15 +341,15 @@ func TestInactiveJobNotDue(t *testing.T) {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
 	}
 	wantQueries := []query{{
-		context.Background(),
+		t.Context(),
 		stmt.CreateChronoTable,
 		nil,
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.InsertJob,
 		[]any{"example", now},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.SelectJob,
 		[]any{"example"},
 	}}
@@ -356,8 +365,10 @@ func TestInactiveJobNotDue(t *testing.T) {
 }
 
 func TestActiveJobValidHeartbeat(t *testing.T) {
-	conn := new(fakeConn)
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	if err := cron.Start(); err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
@@ -387,15 +398,15 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
 	}
 	wantQueries := []query{{
-		context.Background(),
+		t.Context(),
 		stmt.CreateChronoTable,
 		nil,
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.InsertJob,
 		[]any{"example", now},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.SelectJob,
 		[]any{"example"},
 	}}
@@ -411,8 +422,10 @@ func TestActiveJobValidHeartbeat(t *testing.T) {
 }
 
 func TestActiveJobInvalidHeartbeat(t *testing.T) {
-	conn := new(fakeConn)
-	cron := Pgx{Conn: conn}
+	var (
+		conn = new(fakeConn)
+		cron = Pgx{Conn: conn}
+	)
 	if err := cron.Start(); err != nil {
 		t.Errorf("cron.Start() = %q, want <nil>", err)
 	}
@@ -447,23 +460,23 @@ func TestActiveJobInvalidHeartbeat(t *testing.T) {
 		t.Errorf("cron.tick(%v, %v) = %q, want <nil>", now, cr, err)
 	}
 	wantQueries := []query{{
-		context.Background(),
+		t.Context(),
 		stmt.CreateChronoTable,
 		nil,
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.InsertJob,
 		[]any{"example", now},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.SelectJob,
 		[]any{"example"},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.ActivateJob,
 		[]any{"example", now},
 	}, {
-		context.Background(),
+		t.Context(),
 		stmt.UpdateJob,
 		[]any{"example", false, now, now},
 	}}
