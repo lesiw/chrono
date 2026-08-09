@@ -3,6 +3,7 @@ package chrono
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -17,11 +18,11 @@ import (
 )
 
 type unary struct {
-	Ctx context.Context
+	ctx context.Context
 }
 
 type query struct {
-	Ctx context.Context
+	ctx context.Context
 	Sql string //revive:disable-line:var-naming
 	Arg []any
 }
@@ -68,19 +69,17 @@ func (c *fakeConn) QueryRow(ctx context.Context, sql string, a ...any) (row pgx.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.scans) > len(c.queries) {
-		row = &fakeRow{c.scans[len(c.queries)]}
+		row = fakeRow(c.scans[len(c.queries)])
 	}
 	c.queries = append(c.queries, query{ctx, sql, a})
 	return
 }
 
-type fakeRow struct {
-	contents []any
-}
+type fakeRow []any
 
-func (r *fakeRow) Scan(dest ...any) error {
+func (r fakeRow) Scan(dest ...any) error {
 	for i, d := range dest {
-		reflect.ValueOf(d).Elem().Set(reflect.ValueOf(r.contents[i]))
+		reflect.ValueOf(d).Elem().Set(reflect.ValueOf(r[i]))
 	}
 	return nil
 }
@@ -108,7 +107,7 @@ func TestPgxStart(t *testing.T) {
 
 func TestPgxStartConnectionSlow(t *testing.T) {
 	conn := new(fakeConn)
-	pgxErr := errors.New("pgx error")
+	pgxErr := fmt.Errorf("pgx error")
 	conn.queryErrs = []error{pgxErr, pgxErr, nil}
 	sleeps := []time.Duration{}
 	swap(t, &sleep, func(d time.Duration) { sleeps = append(sleeps, d) })
@@ -136,7 +135,7 @@ func TestPgxStartConnectionSlow(t *testing.T) {
 
 func TestNewPgxConnectionFail(t *testing.T) {
 	conn := new(fakeConn)
-	pgxErr := errors.New("pgx error")
+	pgxErr := fmt.Errorf("pgx error")
 	conn.queryErrs = []error{pgxErr, pgxErr, pgxErr}
 	sleeps := []time.Duration{}
 	swap(t, &sleep, func(d time.Duration) { sleeps = append(sleeps, d) })
